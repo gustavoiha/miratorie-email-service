@@ -1,0 +1,26 @@
+{
+  "stackPrefix": "MiratorieEmail",
+  "region": "us-east-1",
+  "domainName": "example.com",
+  "mailFromSubdomain": "mail",
+  "dmarc": {
+    "policy": "quarantine",
+    "reportEmail": "dmarc-reports@example.com"
+  },
+  "activateReceiptRuleSet": true,
+  "cognitoDomainPrefix": "example-com-mail",
+  "accessGroupName": "email-users",
+  "web": {
+    "domainName": "webmail.example.com",
+    "certificateArnParameter": "/example/certificate-arn"
+  },
+  "api": {
+    "domainName": "webmail-api.example.com",
+    "certificateArnParameter": "/example/api-certificate-arn"
+  },
+  "webAclArn": "arn:aws:wafv2:us-east-1:<account-id<:global/webacl/<id>",
+  "localDevOrigins": [
+    "http://localhost:5173"
+  ],
+  "rawInboundRetentionDays": 30
+}
