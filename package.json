@@ -1,0 +1,23 @@
+{
+  "name": "miratorie-email-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted email service on AWS (SES, S3, DynamoDB, Cognito) with a barebones web client.",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "infra"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w frontend",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "synth": "npm run build && npm run synth -w infra",
+    "diff": "npm run build && npm run diff -w infra",
+    "deploy": "npm run build && npm run deploy -w infra",
+    "dev": "npm run dev -w frontend"
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.envrc
+
+# CDK
+infra/cdk.out/
+infra/cdk-outputs.json
+infra/config.json
+
+# Local frontend runtime config (generated from stack outputs)
+frontend/public/config.json
