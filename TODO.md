@@ -14,12 +14,9 @@ within each section.
 - [ ] Inline images (`cid:`) for HTML messages.
 - [ ] Drafts folder with autosave.
 - [ ] Conversation/thread view using `Message-ID` / `In-Reply-To` / `References`.
-- [ ] Search (subject/from/body), e.g. via an index built at receive time.
-- [ ] User-defined folders or labels, and bulk actions (select many, mark read, move).
 - [ ] Signatures and per-user preferences.
 - [ ] Contacts / address autocomplete from previously used recipients.
 - [ ] Automatic emptying of Trash and Junk after N days.
-- [ ] Import/export (mbox / `.eml`).
 
 ## Web client
 
@@ -40,13 +37,11 @@ within each section.
 - [ ] **Send Cognito emails through SES** from `no-reply@<domain>` (branded invitations and
       password resets, and no 50 emails/day limit).
 - [ ] TOTP multi-factor authentication.
-- [ ] Custom domain for the Cognito sign-in pages (e.g. `login.example.com`).
+- [ ] Custom domain for the Cognito sign-in pages (e.g. `auth.example.com`).
 - [ ] Cognito managed login (v2) branding.
-- [ ] Small admin CLI script to add/remove users with the right attributes and group.
 - [ ] AWS WAF in front of the API (the web client's distribution can already use an existing web ACL
       through `webAclArn`).
 - [ ] Clean up web client builds older than the last few deploys (deploys keep old files on purpose).
-- [ ] Optional customer-managed KMS keys for the bucket and table.
 
 ## Operations
 
@@ -62,3 +57,8 @@ within each section.
 - [ ] New-mail notifications (polling, WebSocket API or web push) and unread counts per folder.
 - [ ] Aliases and multiple addresses per user.
 - [ ] Per-user sending quotas and rate limits.
+- [ ] Small admin CLI script to add/remove users with the right attributes and group.
+- [ ] Optional customer-managed KMS keys for the bucket and table.
+- [ ] Import/export (mbox / `.eml`).
+- [ ] Search (subject/from/body), e.g. via an index built at receive time.
+- [ ] User-defined folders or labels, and bulk actions (select many, mark read, move).
