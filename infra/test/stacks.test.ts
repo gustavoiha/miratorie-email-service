@@ -118,6 +118,12 @@ describe('web client distribution', () => {
     const code = JSON.stringify(Object.values(web.findResources('AWS::CloudFront::Function'))[0]!.Properties.FunctionCode);
     expect(code).toContain("connect-src 'self' https://webmail-api.example.com https://");
     expect(code).not.toContain('execute-api');
+    // With a custom web domain, uploads may only go to the transfer bucket itself.
+    expect(code).toMatch(/\{"Ref":"TransferBucket[0-9A-F]+"\},".s3.us-east-1.amazonaws.com/);
+    expect(code).not.toContain('https://*.s3.');
+    web.hasResourceProperties('AWS::S3::Bucket', {
+      CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedMethods: ['POST'], AllowedOrigins: ['https://webmail.example.com', 'http://localhost:5173'] })] },
+    });
   }, 120_000);
 });
 
@@ -154,6 +160,20 @@ describe('stacks', () => {
     expect(Object.keys(mail.findOutputs('*')).filter((key) => key.startsWith('DnsDkim'))).toHaveLength(3);
   });
 
+  it('passes attachments through a transfer bucket that forgets them after a day', () => {
+    web.hasResourceProperties('AWS::Lambda::Function', {
+      Environment: { Variables: Match.objectLike({ TRANSFER_BUCKET_NAME: Match.anyValue() }) },
+    });
+    web.hasResourceProperties('AWS::S3::Bucket', {
+      LifecycleConfiguration: { Rules: [Match.objectLike({ ExpirationInDays: 1, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } })] },
+      CorsConfiguration: { CorsRules: [Match.objectLike({ AllowedMethods: ['POST'] })] },
+      PublicAccessBlockConfiguration: Match.objectLike({ BlockPublicAcls: true, RestrictPublicBuckets: true }),
+    });
+    // Without a custom web domain, the CSP cannot name the bucket (dependency cycle), so it allows the region's S3.
+    const code = JSON.stringify(Object.values(web.findResources('AWS::CloudFront::Function'))[0]!.Properties.FunctionCode);
+    expect(code).toContain('https://*.s3.us-east-1.amazonaws.com');
+  });
+
   it('keeps mail data when the stack is deleted', () => {
     mail.hasResource('AWS::S3::Bucket', { DeletionPolicy: 'Retain' });
     mail.hasResource('AWS::DynamoDB::GlobalTable', { DeletionPolicy: 'Retain' });
@@ -183,7 +203,16 @@ describe('stacks', () => {
 
   it('protects every API route with the Cognito authorizer', () => {
     const routes = Object.values(web.findResources('AWS::ApiGatewayV2::Route'));
-    expect(routes).toHaveLength(6);
+    expect(routes.map((route) => route.Properties.RouteKey).sort()).toEqual([
+      'DELETE /messages/{id}',
+      'GET /me',
+      'GET /messages',
+      'GET /messages/{id}',
+      'GET /messages/{id}/attachments/{index}',
+      'PATCH /messages/{id}',
+      'POST /attachments',
+      'POST /messages',
+    ]);
     for (const route of routes) expect(route.Properties.AuthorizationType).toBe('JWT');
   });
 });
@@ -193,6 +222,7 @@ describe('security headers function', () => {
     const headers = securityHeaders({
       apiOrigin: 'https://*.execute-api.eu-west-1.amazonaws.com',
       hostedUiUrl: 'https://prefix.auth.eu-west-1.amazoncognito.com',
+      uploadOrigin: 'https://*.s3.eu-west-1.amazonaws.com',
     });
     const handler = new Function(`${securityHeadersFunctionCode(headers)}; return handler;`)() as (event: unknown) => {
       headers: Record<string, { value: string }>;
@@ -204,7 +234,8 @@ describe('security headers function', () => {
     expect(response.headers['x-frame-options']).toEqual({ value: 'DENY' });
     expect(response.headers['x-robots-tag']).toEqual({ value: 'noindex, nofollow' });
     expect(response.headers['content-security-policy']!.value).toContain(
-      "connect-src 'self' https://*.execute-api.eu-west-1.amazonaws.com https://prefix.auth.eu-west-1.amazoncognito.com",
+      "connect-src 'self' https://*.execute-api.eu-west-1.amazonaws.com https://prefix.auth.eu-west-1.amazoncognito.com https://*.s3.eu-west-1.amazonaws.com",
     );
+    expect(response.headers['content-security-policy']!.value).toContain("style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;");
   });
 });

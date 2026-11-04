@@ -1,6 +1,12 @@
 import MailComposer from 'nodemailer/lib/mail-composer';
 import type { Recipient } from './addresses.js';
 
+export interface OutgoingAttachment {
+  filename: string;
+  contentType: string;
+  content: Buffer;
+}
+
 export interface OutgoingMessage {
   from: Recipient;
   to: Recipient[];
@@ -8,6 +14,9 @@ export interface OutgoingMessage {
   bcc: Recipient[];
   subject: string;
   text: string;
+  /** Full HTML document. With it the message is multipart/alternative (text and HTML). */
+  html?: string;
+  attachments?: OutgoingAttachment[];
   messageId: string;
   date: Date;
   inReplyTo?: string;
@@ -23,6 +32,8 @@ export async function composeMessage(message: OutgoingMessage): Promise<Buffer> 
     bcc: message.bcc,
     subject: message.subject,
     text: message.text,
+    html: message.html,
+    attachments: message.attachments?.map(({ filename, contentType, content }) => ({ filename, contentType, content })),
     messageId: message.messageId,
     date: message.date,
     inReplyTo: message.inReplyTo,

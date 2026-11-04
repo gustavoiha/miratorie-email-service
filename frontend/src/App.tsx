@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, FOLDER_LABELS, type Folder, MailApi, type Me } from './api';
 import { getIdToken, handleRedirect, signIn, signOut } from './auth';
 import { type AppConfig, loadConfig } from './config';
-import { Compose, type Draft } from './components/Compose';
+import { Compose } from './components/Compose';
 import { MessageList } from './components/MessageList';
 import { MessageView } from './components/MessageView';
+import { type Draft, emptyDraft } from './drafts';
 
 type State =
   | { status: 'loading' }
@@ -159,7 +160,7 @@ function Mailbox({ config, api, me }: { config: AppConfig; api: MailApi; me: Me 
       </header>
 
       <nav className="sidebar">
-        <button className="primary" onClick={() => { setSelectedId(null); setDraft({ from: mailbox, to: '', cc: '', bcc: '', subject: '', text: '' }); }}>
+        <button className="primary" onClick={() => { setSelectedId(null); setDraft(emptyDraft(mailbox)); }}>
           Compose
         </button>
         {me.mailboxes.length > 1 && (

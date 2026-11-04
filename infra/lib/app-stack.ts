@@ -44,6 +44,17 @@ export class AppStack extends Stack {
     });
 
     const hostedUiUrl = userPoolDomain.baseUrl();
+    const web = config.web;
+
+    // Attachments on their way in (browser uploads) and out (downloads), kept for a day at most.
+    const transferBucket = new s3.Bucket(this, 'TransferBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+      lifecycleRules: [{ id: 'expire-transfers', expiration: Duration.days(1), abortIncompleteMultipartUploadAfter: Duration.days(1) }],
+    });
 
     // ---------------------------------------------------------------- security headers
     const securityHeadersFunction = new cloudfront.Function(this, 'SecurityHeadersFunction', {
@@ -54,12 +65,13 @@ export class AppStack extends Stack {
             // Without a custom domain, a wildcard avoids a dependency cycle: the API's CORS config needs the distribution URL.
             apiOrigin: config.api ? `https://${config.api.domainName}` : `https://*.execute-api.${this.region}.amazonaws.com`,
             hostedUiUrl,
+            // Same reason: the bucket's CORS rule needs the distribution URL when there is no custom domain.
+            uploadOrigin: web ? `https://${transferBucket.bucketName}.s3.${this.region}.amazonaws.com` : `https://*.s3.${this.region}.amazonaws.com`,
           }),
         ),
       ),
     });
 
-    const web = config.web;
     const certificate = web
       ? acm.Certificate.fromCertificateArn(
           this,
@@ -91,6 +103,13 @@ export class AppStack extends Stack {
     });
     const webUrl = `https://${web ? web.domainName : distribution.distributionDomainName}`;
     const appOrigins = [webUrl, ...config.localDevOrigins];
+    // The browser posts attachment uploads straight to the bucket (presigned POST); downloads are plain navigations.
+    transferBucket.addCorsRule({
+      allowedOrigins: appOrigins,
+      allowedMethods: [s3.HttpMethods.POST],
+      allowedHeaders: ['*'],
+      maxAge: 3600,
+    });
 
     // ---------------------------------------------------------------- auth client
     const userPoolClient = new cognito.UserPoolClient(this, 'WebClient', {
@@ -121,12 +140,14 @@ export class AppStack extends Stack {
     const apiFunction = backendFunction(this, 'ApiFunction', {
       handler: 'api',
       description: 'Mailbox API: list, read, send and organise messages',
-      timeout: Duration.seconds(20),
-      memorySize: 1024,
+      // Just under the 30 s limit of API Gateway: sending reads, builds and sends up to ~35 MB.
+      timeout: Duration.seconds(29),
+      memorySize: 1536,
       environment: {
         TABLE_NAME: messagesTable.tableName,
         TABLE_INDEX: MAILBOX_INDEX,
         BUCKET_NAME: mailBucket.bucketName,
+        TRANSFER_BUCKET_NAME: transferBucket.bucketName,
         MAIL_DOMAIN: config.domainName,
         ACCESS_GROUP: config.accessGroupName,
       },
@@ -134,6 +155,8 @@ export class AppStack extends Stack {
     messagesTable.grantReadWriteData(apiFunction);
     mailBucket.grantReadWrite(apiFunction, 'mailboxes/*');
     mailBucket.grantDelete(apiFunction, 'mailboxes/*');
+    transferBucket.grantReadWrite(apiFunction);
+    transferBucket.grantDelete(apiFunction, 'uploads/*');
     apiFunction.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['ses:SendEmail', 'ses:SendRawEmail'],
@@ -191,6 +214,8 @@ export class AppStack extends Stack {
       ['/messages/{id}', apigw.HttpMethod.GET],
       ['/messages/{id}', apigw.HttpMethod.PATCH],
       ['/messages/{id}', apigw.HttpMethod.DELETE],
+      ['/messages/{id}/attachments/{index}', apigw.HttpMethod.GET],
+      ['/attachments', apigw.HttpMethod.POST],
     ];
     for (const [path, method] of routes) {
       api.addRoutes({ path, methods: [method], integration, authorizer });

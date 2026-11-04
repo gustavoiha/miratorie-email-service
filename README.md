@@ -8,15 +8,16 @@ deploy three CDK stacks, and get mailboxes such as `alice@example.com` with a sm
 - **Users:** Cognito (admin-created, access group) · **Web client:** React on S3 + CloudFront
 - **DNS:** any provider; the records are stack outputs
 
-Plain-text email only for now; see [TODO.md](TODO.md). More detail in [docs/](docs/):
+HTML mail (sanitised, remote images blocked until you ask) and attachments up to 25 MB per message;
+what is missing is in [TODO.md](TODO.md). More detail in [docs/](docs/):
 [architecture](docs/architecture.md), [DNS](docs/dns.md), [users](docs/users.md),
 [custom domains](docs/custom-domains.md), [troubleshooting](docs/troubleshooting.md).
 
-| Stack           | Contents                                                              | On destroy             |
-| --------------- | --------------------------------------------------------------------- | ---------------------- |
-| `<prefix>-Mail` | SES identity and receipt rules, mail bucket, DynamoDB, inbound Lambda | Bucket, table retained |
-| `<prefix>-Auth` | Cognito user pool, access group, sign-in domain                       | User pool retained     |
-| `<prefix>-App`  | CloudFront web client, Cognito app client, HTTP API, API Lambda       | Removed                |
+| Stack           | Contents                                                                            | On destroy             |
+| --------------- | ----------------------------------------------------------------------------------- | ---------------------- |
+| `<prefix>-Mail` | SES identity and receipt rules, mail bucket, DynamoDB, inbound Lambda               | Bucket, table retained |
+| `<prefix>-Auth` | Cognito user pool, access group, sign-in domain                                     | User pool retained     |
+| `<prefix>-App`  | CloudFront web client, Cognito app client, HTTP API + Lambda, attachment transfer bucket | Removed           |
 
 ## Prerequisites
 

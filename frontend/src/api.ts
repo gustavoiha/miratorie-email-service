@@ -27,13 +27,15 @@ export interface MessageSummary {
   date: string;
   read: boolean;
   size: number;
+  /** In MIME order: an attachment's index is how it is downloaded. */
   attachments: Attachment[];
 }
 
 export interface Message extends MessageSummary {
   replyTo: string[];
   text: string;
-  hasHtml: boolean;
+  /** Sanitised HTML body, when the message has one. Render it only through `HtmlBody`. */
+  html?: string;
 }
 
 export interface MessagePage {
@@ -55,9 +57,25 @@ export interface OutgoingMessage {
   cc: string[];
   bcc: string[];
   subject: string;
-  text: string;
+  /** HTML fragment from the editor; the server sanitises it and derives the text part. */
+  html: string;
   inReplyTo?: string;
+  /** Finished uploads. */
+  attachments: Array<{ id: string; filename: string; contentType: string }>;
+  /** Attachments (by index) of a message in the same mailbox, to send along. */
+  forward?: { id: string; attachments: number[] };
 }
+
+/** A presigned POST to S3 for one attachment. */
+export interface Upload {
+  id: string;
+  url: string;
+  fields: Record<string, string>;
+  maxBytes: number;
+}
+
+/** Same limit as the API: the total of a message's attachments. */
+export const MAX_ATTACHMENTS_BYTES = 25 * 1024 * 1024;
 
 export class ApiError extends Error {
   constructor(
@@ -69,8 +87,8 @@ export class ApiError extends Error {
   }
 }
 
-function messagePath(mailbox: string, id: string): string {
-  return `/messages/${encodeURIComponent(id)}?${new URLSearchParams({ mailbox })}`;
+function messagePath(mailbox: string, id: string, suffix = ''): string {
+  return `/messages/${encodeURIComponent(id)}${suffix}?${new URLSearchParams({ mailbox })}`;
 }
 
 export class MailApi {
@@ -99,6 +117,33 @@ export class MailApi {
 
   remove(mailbox: string, id: string): Promise<void> {
     return this.request('DELETE', messagePath(mailbox, id));
+  }
+
+  /** A short-lived URL that downloads the attachment. */
+  attachmentUrl(mailbox: string, id: string, index: number): Promise<{ url: string; filename: string }> {
+    return this.request('GET', messagePath(mailbox, id, `/attachments/${index}`));
+  }
+
+  /** Uploads a file for a message about to be sent; resolves with the upload id. */
+  async upload(file: File, onProgress: (fraction: number) => void, signal?: AbortSignal): Promise<string> {
+    const contentType = file.type || 'application/octet-stream';
+    const upload = await this.request<Upload>('POST', '/attachments', { contentType, size: file.size });
+    const form = new FormData();
+    for (const [name, value] of Object.entries(upload.fields)) form.append(name, value);
+    form.append('file', file);
+
+    // XMLHttpRequest rather than fetch: it reports upload progress.
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', upload.url);
+      xhr.upload.onprogress = (event) => event.lengthComputable && onProgress(event.loaded / event.total);
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new ApiError(xhr.status, 'upload_failed', 'The upload failed.')));
+      xhr.onerror = () => reject(new ApiError(0, 'upload_failed', 'The upload failed. Check your connection.'));
+      xhr.onabort = () => reject(new ApiError(0, 'upload_aborted', 'The upload was cancelled.'));
+      signal?.addEventListener('abort', () => xhr.abort());
+      xhr.send(form);
+    });
+    return upload.id;
   }
 
   /** Sends from `mailbox`, which must be one of `Me.mailboxes`. */

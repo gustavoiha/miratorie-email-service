@@ -393,3 +393,145 @@ textarea {
     display: none;
   }
 }
+
+/* HTML bodies and attachments. */
+.html-body {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+button.link.inline {
+  display: inline;
+  font-size: inherit;
+}
+
+.body-toggle {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.attachments ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.attachments h3 {
+  font-size: 0.9rem;
+}
+
+.attachments button.link {
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+/* Composer: editor and attachments. */
+.editor {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-height: 18rem;
+}
+
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.35rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  border-radius: 6px 6px 0 0;
+}
+
+.editor-toolbar button {
+  padding: 0.15rem 0.55rem;
+  font-size: 0.85rem;
+  background: var(--bg);
+}
+
+.editor-toolbar button:nth-child(1) {
+  font-weight: 700;
+}
+
+.editor-toolbar button:nth-child(2) {
+  font-style: italic;
+}
+
+.editor-toolbar button:nth-child(3) {
+  text-decoration: underline;
+}
+
+.editor-content {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  outline: none;
+  overflow-wrap: break-word;
+  min-height: 15rem;
+}
+
+.editor-content:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: 0 0 6px 6px;
+}
+
+.editor-content p {
+  margin: 0 0 0.6rem;
+}
+
+.editor-content blockquote {
+  margin: 0 0 0.6rem 0.25rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.attachment-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  font-size: 0.85rem;
+}
+
+.chip.failed {
+  border-color: var(--danger);
+}
+
+.chip.failed .muted {
+  color: var(--danger);
+}
+
+.chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.chip progress {
+  width: 4rem;
+}
+
+.compose .toolbar {
+  align-items: center;
+}

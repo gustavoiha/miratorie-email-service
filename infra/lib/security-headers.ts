@@ -3,16 +3,21 @@ export interface SecurityHeadersOptions {
   apiOrigin: string;
   /** Origin of the Cognito hosted UI, which the web client calls for tokens. */
   hostedUiUrl: string;
+  /** Origin (or origin pattern) of the bucket the web client uploads attachments to. */
+  uploadOrigin: string;
 }
 
-export function securityHeaders({ apiOrigin, hostedUiUrl }: SecurityHeadersOptions): Record<string, string> {
+export function securityHeaders({ apiOrigin, hostedUiUrl, uploadOrigin }: SecurityHeadersOptions): Record<string, string> {
   return {
     'content-security-policy': [
       "default-src 'self'",
       "script-src 'self'",
-      "style-src 'self'",
-      "img-src 'self' data:",
-      `connect-src 'self' ${apiOrigin} ${hostedUiUrl}`,
+      // HTML mail is shown in a sandboxed srcdoc iframe, which inherits this policy: it needs inline
+      // styles, and https images once the reader chooses to load them. The iframe adds its own,
+      // stricter policy on top (no remote images by default, nothing else remote).
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https:",
+      `connect-src 'self' ${apiOrigin} ${hostedUiUrl} ${uploadOrigin}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

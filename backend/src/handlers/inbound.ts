@@ -3,7 +3,7 @@ import { isOnDomain, normalizeAddress } from '../lib/addresses.js';
 import { env } from '../lib/env.js';
 import { mailboxObjectKey, newMessageId } from '../lib/ids.js';
 import { type Folder, type MessageRecord, folderKey, putMessage } from '../lib/messages.js';
-import { parseMessage, snippetOf } from '../lib/mime.js';
+import { attachmentInfo, parseMessage, snippetOf } from '../lib/mime.js';
 import { copyRawMessage, getRawMessage } from '../lib/storage.js';
 
 /**
@@ -64,7 +64,7 @@ export async function processMessage({ mail, receipt }: SESMessage): Promise<voi
       size: raw.length,
       messageIdHeader: parsed.messageId,
       references: parsed.references,
-      attachments: parsed.attachments,
+      attachments: parsed.attachments.map(attachmentInfo),
       verdicts,
     };
     await putMessage(item);

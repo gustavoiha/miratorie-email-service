@@ -24,6 +24,7 @@ flowchart LR
     cf[CloudFront + S3<br/>web client]
     api[HTTP API<br/>JWT authorizer]
     apiFn[Lambda: API]
+    transfer[(S3 transfer bucket<br/>1-day expiry)]
   end
 
   sender -- SMTP via MX --> sesIn
@@ -37,6 +38,8 @@ flowchart LR
   browser -- ID token --> api --> apiFn
   apiFn --> table
   apiFn --> bucket
+  apiFn --> transfer
+  browser -- presigned upload / download --> transfer
   apiFn -- SendEmail --> sesOut --> rcpt
 ```
 
@@ -56,13 +59,44 @@ SES pushes events, and the web client refreshes on navigation or on *Refresh*.
 
 ## Sending
 
-Synchronous, no queue. The API Lambda builds the MIME message, calls SES `SendEmail` (raw; the SDK
+Synchronous, no queue. The web client's editor produces simple HTML (formatting, lists, quotes,
+links); the API sanitises it again and sends `multipart/alternative` with a plain-text rendering,
+plus any attachments. The API Lambda builds the MIME message, calls SES `SendEmail` (raw; the SDK
 retries throttling and transient errors), and only after SES accepts it stores the copy in S3 and the
 Sent item in DynamoDB. SES rejections return `422`, throttling `429`. After acceptance SES retries
 delivery; bounces and complaints reach the sender's inbox through SES feedback forwarding and are
 otherwise unhandled (see TODO).
 
 SES signs with DKIM and uses `mail.<domain>` as MAIL FROM, so SPF and DKIM both align with `From:`.
+
+## HTML mail
+
+`GET /messages/{id}` returns the HTML body sanitised server-side (`sanitize-html`): scripts, event
+handlers, forms, frames, embeds, `javascript:` and relative URLs are removed, links get
+`target="_blank" rel="noopener noreferrer"`, and inline `cid:` images become data: URLs (up to 2 MB per
+message; larger ones are left as attachments). Bodies over 2 MB fall back to plain text.
+
+The web client renders it in an `iframe srcdoc` with `sandbox="allow-same-origin allow-popups
+allow-popups-to-escape-sandbox"`: no scripts, forms or top-level navigation; same-origin only lets
+the page measure the content to size the frame. A `srcdoc` frame inherits the app's CSP, so the app
+allows inline styles and https images; the frame adds its own CSP (`default-src 'none'`, inline styles,
+`img-src data:`), which blocks remote images, CSS backgrounds, fonts and stylesheets until the reader
+clicks *Show images* (then `img-src data: https:`). Replies and forwards quote the original as text.
+
+## Attachments
+
+Attachments pass through the App stack's transfer bucket, whose objects expire after a day:
+
+- **Send:** `POST /attachments` returns a presigned POST for `uploads/<user>/<upload id>` (15 minutes,
+  ≤ 25 MB); the browser posts the file straight to S3 (CORS allows only the web client origins). The
+  send request names the uploads; the API reads them, checks the total (≤ 25 MB, about 35 MB once
+  encoded, under the SES 40 MB limit; at most 20 files), attaches them and deletes the uploads.
+  Forwarding re-attaches chosen attachments of the original from the stored message.
+- **Download:** `GET /messages/{id}/attachments/{index}` extracts the attachment from the stored
+  message into `downloads/<mailbox>/<id>/<index>` (reused while it exists) and returns a presigned GET
+  valid for 5 minutes that always downloads (`Content-Disposition: attachment`).
+
+The API Lambda bundles the AWS SDK (for the presigners) and has 1.5 GB and 29 s for large messages.
 
 ## Access
 
@@ -81,7 +115,7 @@ goes to that mailbox's Sent folder.
 | --------------- | ---------------------------------------------------------------------------------------------- | --------------------- |
 | `<prefix>-Mail` | SES identity, receipt rule set, mail bucket, DynamoDB table, inbound Lambda + DLQ, DNS outputs | Bucket, table retained |
 | `<prefix>-Auth` | Cognito user pool, access group, hosted sign-in domain                                         | User pool retained    |
-| `<prefix>-App`  | CloudFront + site bucket, Cognito app client, HTTP API, API Lambda                             | Removed               |
+| `<prefix>-App`  | CloudFront + site bucket, Cognito app client, HTTP API, API Lambda, transfer bucket            | Removed               |
 
 ## API
 
@@ -93,8 +127,10 @@ cannot use.
 | ----------------------- | ----------------------------------------------------------------------------------------------- |
 | `GET /me`               | `{ mailbox, mailboxes, name, domain }`; `mailboxes` lists own and collective addresses           |
 | `GET /messages`         | `?folder=INBOX\|SENT\|JUNK\|TRASH&limit=1..100&cursor=…` → `{ messages, cursor? }`, newest first |
-| `GET /messages/{id}`    | Message with plain-text body (parsed from S3 on each read)                                      |
-| `POST /messages`        | `{ to, cc?, bcc?, subject, text, inReplyTo? }`; ≤ 50 recipients; `inReplyTo` is a message id     |
+| `GET /messages/{id}`    | Message with `text` and sanitised `html?` bodies (parsed from S3 on each read)                  |
+| `GET /messages/{id}/attachments/{index}` | `{ url, filename }`: presigned download, valid 5 minutes                         |
+| `POST /attachments`     | `{ contentType, size? }` → `{ id, url, fields, maxBytes }`: presigned POST for one upload        |
+| `POST /messages`        | `{ to, cc?, bcc?, subject, html \| text, inReplyTo?, attachments?: [{ id, filename, contentType }], forward?: { id, attachments: [index] } }`; ≤ 50 recipients, ≤ 20 attachments, ≤ 25 MB |
 | `PATCH /messages/{id}`  | `{ read?, folder? }`                                                                             |
 | `DELETE /messages/{id}` | Permanent delete; message must be in `TRASH`                                                    |
 
@@ -107,6 +143,6 @@ cannot use.
 | `byFolder` partition | `folderKey` | `<mailbox>#<FOLDER>`                                                                  |
 | `byFolder` sort    | `id`        | as above                                                                                |
 
-Items hold the summary (from, to, cc, bcc, subject, snippet, date, read, attachments, verdicts) and
-`s3Key`; the body is read from `mailboxes/<mailbox>/<id>.eml`. There is no TTL: mail is only deleted
-by the user.
+Items hold the summary (from, to, cc, bcc, subject, snippet, date, read, attachments in MIME order,
+verdicts), the threading headers (`messageIdHeader`, `references`) and `s3Key`; the body is read
+from `mailboxes/<mailbox>/<id>.eml`. There is no TTL: mail is only deleted by the user.

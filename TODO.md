@@ -5,15 +5,9 @@ within each section.
 
 ## Email features
 
-- [ ] **HTML email** – render HTML bodies safely (sanitise server-side, show in a sandboxed
-      `iframe` with remote images blocked by default) and allow composing simple HTML.
-- [ ] **Attachments: download** – serve attachments through short-lived S3 presigned URLs
-      (extract parts on demand or at receive time).
-- [ ] **Attachments: send** – upload to S3 with presigned POSTs, then include them when building
-      the MIME message (mind the SES 40 MB message limit).
-- [ ] Inline images (`cid:`) for HTML messages.
 - [ ] Drafts folder with autosave.
-- [ ] Conversation/thread view using `Message-ID` / `In-Reply-To` / `References`.
+- [ ] Conversation/thread view using `Message-ID` / `In-Reply-To` / `References`. Replies trim
+      `References` to the last 20 ids, which drops the conversation's root; keep the first one.
 - [ ] Signatures and per-user preferences.
 - [ ] Contacts / address autocomplete from previously used recipients.
 - [ ] Automatic emptying of Trash and Junk after N days.
@@ -62,3 +56,6 @@ within each section.
 - [ ] Import/export (mbox / `.eml`).
 - [ ] Search (subject/from/body), e.g. via an index built at receive time.
 - [ ] User-defined folders or labels, and bulk actions (select many, mark read, move).
+- [ ] Composer: inline images
+- [ ] Composer: quote the original's HTML (not just its text) in replies and forwards.
+- [ ] Inline (`cid:`) images beyond the 2 MB per-message budget, served through presigned URLs.

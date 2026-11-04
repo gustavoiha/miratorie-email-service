@@ -43,8 +43,9 @@ export function backendFunction(scope: Construct, id: string, props: BackendFunc
       target: 'node24',
       minify: true,
       sourceMap: true,
-      // The AWS SDK v3 is provided by the Lambda runtime.
-      externalModules: ['@aws-sdk/*'],
+      // Bundle the AWS SDK too (rather than use the runtime's copy): the S3 presigners are not
+      // guaranteed to be in the runtime, and must match the bundled S3 client version.
+      externalModules: [],
     },
   });
 }

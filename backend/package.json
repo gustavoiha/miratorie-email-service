@@ -12,14 +12,18 @@
     "@aws-sdk/client-s3": "^3.1158.0",
     "@aws-sdk/client-sesv2": "^3.1158.0",
     "@aws-sdk/lib-dynamodb": "^3.1158.0",
+    "@aws-sdk/s3-presigned-post": "^3.1158.0",
+    "@aws-sdk/s3-request-presigner": "^3.1158.0",
     "html-to-text": "^10.0.1",
     "mailparser": "^3.12.4",
-    "nodemailer": "^10.2.1"
+    "nodemailer": "^10.2.1",
+    "sanitize-html": "^2.18.1"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.164",
     "@types/html-to-text": "^9.0.4",
     "@types/node": "^26.6.5",
+    "@types/sanitize-html": "^2.16.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
   }

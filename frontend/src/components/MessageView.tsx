@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Folder, MailApi, Me, Message } from '../api';
-import { addressOf, formatDate, formatSize } from '../format';
-import type { Draft } from './Compose';
+import { type Draft, forwardDraft, replyDraft } from '../drafts';
+import { formatDate, formatSize } from '../format';
+import { HtmlBody, hasRemoteContent } from './HtmlBody';
 
 interface Props {
   api: MailApi;
@@ -21,6 +22,9 @@ export function MessageView({ api, me, mailbox, id, onClose, onChanged, onRead, 
   const [message, setMessage] = useState<Message | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showImages, setShowImages] = useState(false);
+  const [asText, setAsText] = useState(false);
+  const [downloading, setDownloading] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,11 +44,12 @@ export function MessageView({ api, me, mailbox, id, onClose, onChanged, onRead, 
     };
   }, [api, mailbox, id]);
 
-  if (error) return <p className="error">{error}</p>;
+  if (error && !message) return <p className="error">{error}</p>;
   if (!message) return <p className="muted">Loading…</p>;
 
   const act = async (action: () => Promise<unknown>, notice: string) => {
     setBusy(true);
+    setError(null);
     try {
       await action();
       onChanged(notice);
@@ -54,6 +59,20 @@ export function MessageView({ api, me, mailbox, id, onClose, onChanged, onRead, 
     }
   };
   const move = (folder: Folder, notice: string) => act(() => api.update(mailbox, id, { folder }), notice);
+
+  const download = async (index: number) => {
+    setDownloading(index);
+    setError(null);
+    try {
+      const { url } = await api.attachmentUrl(mailbox, id, index);
+      // The URL answers with Content-Disposition: attachment, so the page stays where it is.
+      window.location.assign(url);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDownloading(null);
+    }
+  };
 
   return (
     <article className="message">
@@ -118,18 +137,39 @@ export function MessageView({ api, me, mailbox, id, onClose, onChanged, onRead, 
       </dl>
 
       {message.folder === 'JUNK' && <p className="notice">This message was classified as junk. Be careful with links and requests.</p>}
-      {message.hasHtml && <p className="notice muted">This message has HTML content; it is shown as plain text.</p>}
+      {error && <p className="error">{error}</p>}
 
-      <pre className="body">{message.text || '(empty message)'}</pre>
+      {message.html && !asText ? (
+        <>
+          {hasRemoteContent(message.html) && !showImages && (
+            <p className="notice">
+              Remote images are hidden, so the sender cannot tell when you open this message.{' '}
+              <button className="link inline" onClick={() => setShowImages(true)}>
+                Show images
+              </button>
+            </p>
+          )}
+          <HtmlBody html={message.html} showImages={showImages} />
+        </>
+      ) : (
+        <pre className="body">{message.text || '(empty message)'}</pre>
+      )}
+      {message.html && (
+        <button className="link body-toggle" onClick={() => setAsText((current) => !current)}>
+          {asText ? 'Show formatted' : 'Show as plain text'}
+        </button>
+      )}
 
       {message.attachments.length > 0 && (
         <div className="attachments">
-          <h3>Attachments</h3>
-          <p className="muted">Downloading attachments is not supported yet.</p>
+          <h3>{message.attachments.length === 1 ? '1 attachment' : `${message.attachments.length} attachments`}</h3>
           <ul>
             {message.attachments.map((attachment, index) => (
               <li key={index}>
-                {attachment.filename} <span className="muted">({attachment.contentType}, {formatSize(attachment.size)})</span>
+                <button className="link" disabled={downloading !== null} onClick={() => download(index)} title={`Download ${attachment.filename}`}>
+                  {downloading === index ? 'Preparing…' : `⬇ ${attachment.filename}`}
+                </button>{' '}
+                <span className="muted">{formatSize(attachment.size)}</span>
               </li>
             ))}
           </ul>
@@ -137,59 +177,4 @@ export function MessageView({ api, me, mailbox, id, onClose, onChanged, onRead, 
       )}
     </article>
   );
-}
-
-function prefixed(prefix: string, subject: string): string {
-  return new RegExp(`^${prefix}:`, 'i').test(subject) ? subject : `${prefix}: ${subject}`;
-}
-
-function quote(message: Message): string {
-  const quoted = message.text
-    .split('\n')
-    .map((line) => `> ${line}`)
-    .join('\n');
-  return `\n\nOn ${formatDate(message.date)}, ${message.from} wrote:\n${quoted}`;
-}
-
-function replyDraft(message: Message, me: Me, mailbox: string, all: boolean): Draft {
-  // None of the user's own mailboxes (own or collective) should be copied on a reply.
-  const own = new Set(me.mailboxes.map((address) => address.toLowerCase()));
-  const sentByMe = addressOf(message.from) === mailbox.toLowerCase();
-  const primary = sentByMe ? message.to : message.replyTo.length > 0 ? message.replyTo : [message.from];
-  const others = all ? [...message.to, ...message.cc] : [];
-  const seen = new Set(primary.map(addressOf));
-  const cc = others.filter((entry) => {
-    const address = addressOf(entry);
-    if (own.has(address) || seen.has(address)) return false;
-    seen.add(address);
-    return true;
-  });
-  return {
-    from: mailbox,
-    to: primary.join(', '),
-    cc: cc.join(', '),
-    bcc: '',
-    subject: prefixed('Re', message.subject),
-    text: quote(message),
-    inReplyTo: message.id,
-  };
-}
-
-function forwardDraft(message: Message, mailbox: string): Draft {
-  const header = [
-    '---------- Forwarded message ----------',
-    `From: ${message.from}`,
-    `Date: ${formatDate(message.date)}`,
-    `Subject: ${message.subject}`,
-    `To: ${message.to.join(', ')}`,
-    ...(message.cc.length > 0 ? [`Cc: ${message.cc.join(', ')}`] : []),
-  ].join('\n');
-  return {
-    from: mailbox,
-    to: '',
-    cc: '',
-    bcc: '',
-    subject: prefixed('Fwd', message.subject),
-    text: `\n\n${header}\n\n${message.text}`,
-  };
 }
