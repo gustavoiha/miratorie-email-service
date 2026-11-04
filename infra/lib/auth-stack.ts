@@ -3,6 +3,9 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import type { Construct } from 'constructs';
 import type { EmailServiceConfig } from './config.js';
 
+/** Groups named `mailbox:<address>` give their members access to that collective address (see backend auth). */
+export const MAILBOX_GROUP_PREFIX = 'mailbox:';
+
 /** Name of the custom attribute holding the user's mailbox address (without the "custom:" prefix). */
 export const PRIMARY_EMAIL_ATTRIBUTE = 'primary_email';
 
@@ -76,6 +79,14 @@ export class AuthStack extends Stack {
       groupName: config.accessGroupName,
       description: `Members can use the ${config.domainName} email service`,
     });
+
+    for (const address of config.collectiveAddresses) {
+      new cognito.UserPoolGroup(this, `Mailbox-${address}`, {
+        userPool: this.userPool,
+        groupName: `${MAILBOX_GROUP_PREFIX}${address}`,
+        description: `Members can read and send from ${address}`,
+      });
+    }
 
     this.userPoolDomain = this.userPool.addDomain('HostedUi', {
       cognitoDomain: { domainPrefix: config.cognitoDomainPrefix },

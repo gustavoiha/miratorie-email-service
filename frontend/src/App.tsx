@@ -85,6 +85,7 @@ export function App() {
 const FOLDERS: Folder[] = ['INBOX', 'SENT', 'JUNK', 'TRASH'];
 
 function Mailbox({ config, api, me }: { config: AppConfig; api: MailApi; me: Me }) {
+  const [mailbox, setMailbox] = useState(me.mailbox);
   const [folder, setFolder] = useState<Folder>('INBOX');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -96,6 +97,10 @@ function Mailbox({ config, api, me }: { config: AppConfig; api: MailApi; me: Me 
     setFolder(next);
     setSelectedId(null);
     setDraft(null);
+  };
+  const openMailbox = (next: string) => {
+    setMailbox(next);
+    openFolder('INBOX');
   };
 
   useEffect(() => {
@@ -123,9 +128,10 @@ function Mailbox({ config, api, me }: { config: AppConfig; api: MailApi; me: Me 
     if (selectedId) {
       return (
         <MessageView
-          key={selectedId}
+          key={`${mailbox}/${selectedId}`}
           api={api}
           me={me}
+          mailbox={mailbox}
           id={selectedId}
           onClose={() => setSelectedId(null)}
           onChanged={(message) => {
@@ -139,7 +145,7 @@ function Mailbox({ config, api, me }: { config: AppConfig; api: MailApi; me: Me 
       );
     }
     return null;
-  }, [api, me, draft, selectedId, refresh]);
+  }, [api, me, mailbox, draft, selectedId, refresh]);
 
   return (
     <div className="layout">
@@ -147,15 +153,26 @@ function Mailbox({ config, api, me }: { config: AppConfig; api: MailApi; me: Me 
         <strong>{config.mailDomain}</strong>
         <span className="muted">
           {me.name ? `${me.name} · ` : ''}
-          {me.mailbox}
+          {mailbox}
         </span>
         <button onClick={() => signOut(config)}>Sign out</button>
       </header>
 
       <nav className="sidebar">
-        <button className="primary" onClick={() => { setSelectedId(null); setDraft({ to: '', cc: '', bcc: '', subject: '', text: '' }); }}>
+        <button className="primary" onClick={() => { setSelectedId(null); setDraft({ from: mailbox, to: '', cc: '', bcc: '', subject: '', text: '' }); }}>
           Compose
         </button>
+        {me.mailboxes.length > 1 && (
+          <div className="mailboxes">
+            <span className="muted section-label">Mailboxes</span>
+            {me.mailboxes.map((address) => (
+              <button key={address} className={address === mailbox ? 'folder active' : 'folder'} onClick={() => openMailbox(address)} title={address}>
+                {address.split('@')[0]}
+              </button>
+            ))}
+            <span className="muted section-label">Folders</span>
+          </div>
+        )}
         {FOLDERS.map((name) => (
           <button key={name} className={name === folder ? 'folder active' : 'folder'} onClick={() => openFolder(name)}>
             {FOLDER_LABELS[name]}
@@ -164,7 +181,7 @@ function Mailbox({ config, api, me }: { config: AppConfig; api: MailApi; me: Me 
       </nav>
 
       <section className={content ? 'list hidden-narrow' : 'list'}>
-        <MessageList api={api} folder={folder} selectedId={selectedId} refreshKey={refreshKey} onOpen={(id) => { setDraft(null); setSelectedId(id); }} />
+        <MessageList key={mailbox} api={api} mailbox={mailbox} folder={folder} selectedId={selectedId} refreshKey={refreshKey} onOpen={(id) => { setDraft(null); setSelectedId(id); }} />
       </section>
 
       <main className={content ? 'detail' : 'detail hidden-narrow'}>{content ?? <p className="muted centered">Select a message.</p>}</main>

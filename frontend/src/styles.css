@@ -82,6 +82,7 @@ button.link {
 }
 
 input,
+select,
 textarea {
   font: inherit;
   color: inherit;
@@ -163,6 +164,19 @@ textarea {
   text-align: left;
   background: none;
   border-color: transparent;
+}
+
+.mailboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.section-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0.5rem 0 0 0.8rem;
 }
 
 .folder.active {
@@ -315,6 +329,7 @@ textarea {
 }
 
 .compose label input,
+.compose label select,
 .compose label textarea {
   color: var(--fg);
   font-size: 0.95rem;
@@ -334,7 +349,7 @@ textarea {
 /* Narrow screens: folders on top, then either the list or the open message. */
 @media (max-width: 760px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto 1fr;
     grid-template-areas:
       'top'
@@ -353,6 +368,18 @@ textarea {
 
   .sidebar .primary {
     margin: 0 0.5rem 0 0;
+  }
+
+  /* Mailboxes take their own row, above the folders. */
+  .mailboxes {
+    flex-basis: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .section-label {
+    margin: 0 0.25rem;
   }
 
   .list,

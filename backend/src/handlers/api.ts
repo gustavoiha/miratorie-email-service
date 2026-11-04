@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { RecipientError, parseRecipients } from '../lib/addresses.js';
-import { type Caller, getCaller } from '../lib/auth.js';
+import { type Caller, getCaller, resolveMailbox } from '../lib/auth.js';
 import { composeMessage, formatRecipient } from '../lib/compose.js';
 import { env } from '../lib/env.js';
 import { HttpError, json, noContent, parseJsonBody } from '../lib/http.js';
@@ -33,19 +33,21 @@ type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 export async function handler(event: Event): Promise<APIGatewayProxyResultV2> {
   try {
     const caller = getCaller(event, { accessGroup: env.accessGroup, mailDomain: env.mailDomain });
+    // Every message route acts on one mailbox: the caller's own, or a collective one they belong to.
+    const mailbox = resolveMailbox(caller, event.queryStringParameters?.mailbox);
     switch (event.routeKey) {
       case 'GET /me':
-        return json(200, { mailbox: caller.mailbox, name: caller.name, domain: env.mailDomain });
+        return json(200, { mailbox: caller.mailbox, mailboxes: caller.mailboxes, name: caller.name, domain: env.mailDomain });
       case 'GET /messages':
-        return await list(caller, event);
+        return await list(mailbox, event);
       case 'POST /messages':
-        return await send(caller, event);
+        return await send(caller, mailbox, event);
       case 'GET /messages/{id}':
-        return await read(caller, messageIdParam(event));
+        return await read(mailbox, messageIdParam(event));
       case 'PATCH /messages/{id}':
-        return await update(caller, messageIdParam(event), event);
+        return await update(mailbox, messageIdParam(event), event);
       case 'DELETE /messages/{id}':
-        return await remove(caller, messageIdParam(event));
+        return await remove(mailbox, messageIdParam(event));
       default:
         return json(404, { error: 'not_found', message: `No route for ${event.routeKey}` });
     }
@@ -64,16 +66,16 @@ function messageIdParam(event: Event): string {
   return id;
 }
 
-async function list(caller: Caller, event: Event): Promise<APIGatewayProxyResultV2> {
+async function list(mailbox: string, event: Event): Promise<APIGatewayProxyResultV2> {
   const query = event.queryStringParameters ?? {};
   const folder = query.folder ?? 'INBOX';
   if (!isFolder(folder)) throw new HttpError(400, 'invalid_folder', `Unknown folder ${folder}.`);
   const limit = Math.min(Math.max(Number.parseInt(query.limit ?? '25', 10) || 25, 1), 100);
-  return json(200, await listMessages(caller.mailbox, folder, limit, query.cursor));
+  return json(200, await listMessages(mailbox, folder, limit, query.cursor));
 }
 
-async function read(caller: Caller, id: string): Promise<APIGatewayProxyResultV2> {
-  const record = await getMessage(caller.mailbox, id);
+async function read(mailbox: string, id: string): Promise<APIGatewayProxyResultV2> {
+  const record = await getMessage(mailbox, id);
   if (!record) throw notFound();
   const parsed = await parseMessage(await getRawMessage(record.s3Key));
   return json(200, {
@@ -84,7 +86,7 @@ async function read(caller: Caller, id: string): Promise<APIGatewayProxyResultV2
   });
 }
 
-async function update(caller: Caller, id: string, event: Event): Promise<APIGatewayProxyResultV2> {
+async function update(mailbox: string, id: string, event: Event): Promise<APIGatewayProxyResultV2> {
   const body = parseJsonBody(event.body, event.isBase64Encoded);
   const changes: { read?: boolean; folder?: MessageRecord['folder'] } = {};
   if (body.read !== undefined) {
@@ -95,21 +97,21 @@ async function update(caller: Caller, id: string, event: Event): Promise<APIGate
     if (!isFolder(body.folder)) throw new HttpError(400, 'invalid_folder', `Unknown folder ${String(body.folder)}.`);
     changes.folder = body.folder;
   }
-  return json(200, toSummary(await updateMessage(caller.mailbox, id, changes)));
+  return json(200, toSummary(await updateMessage(mailbox, id, changes)));
 }
 
-async function remove(caller: Caller, id: string): Promise<APIGatewayProxyResultV2> {
-  const record = await getMessage(caller.mailbox, id);
+async function remove(mailbox: string, id: string): Promise<APIGatewayProxyResultV2> {
+  const record = await getMessage(mailbox, id);
   if (!record) throw notFound();
   if (record.folder !== 'TRASH') {
     throw new HttpError(409, 'not_in_trash', 'Move the message to the trash before deleting it permanently.');
   }
-  await deleteMessage(caller.mailbox, id);
+  await deleteMessage(mailbox, id);
   await deleteRawMessage(record.s3Key);
   return noContent();
 }
 
-async function send(caller: Caller, event: Event): Promise<APIGatewayProxyResultV2> {
+async function send(caller: Caller, mailbox: string, event: Event): Promise<APIGatewayProxyResultV2> {
   const body = parseJsonBody(event.body, event.isBase64Encoded);
 
   let to, cc, bcc;
@@ -136,7 +138,7 @@ async function send(caller: Caller, event: Event): Promise<APIGatewayProxyResult
   let references: string[] | undefined;
   if (body.inReplyTo !== undefined) {
     if (typeof body.inReplyTo !== 'string' || !isMessageId(body.inReplyTo)) throw notFound();
-    const original = await getMessage(caller.mailbox, body.inReplyTo);
+    const original = await getMessage(mailbox, body.inReplyTo);
     if (!original) throw notFound();
     if (original.messageIdHeader) {
       inReplyTo = original.messageIdHeader;
@@ -148,13 +150,13 @@ async function send(caller: Caller, event: Event): Promise<APIGatewayProxyResult
   const unique = randomUUID();
   const id = newMessageId(now, unique);
   const messageIdHeader = `<${unique}@${env.mailDomain}>`;
-  const from = { name: caller.name, address: caller.mailbox };
+  const from = { name: caller.name, address: mailbox };
   const raw = await composeMessage({ from, to, cc, bcc, subject, text, messageId: messageIdHeader, date: now, inReplyTo, references });
 
   try {
     await ses.send(
       new SendEmailCommand({
-        FromEmailAddress: caller.mailbox,
+        FromEmailAddress: mailbox,
         Destination: {
           ToAddresses: to.map((r) => r.address),
           CcAddresses: cc.map((r) => r.address),
@@ -175,12 +177,12 @@ async function send(caller: Caller, event: Event): Promise<APIGatewayProxyResult
     throw error;
   }
 
-  const s3Key = mailboxObjectKey(caller.mailbox, id);
+  const s3Key = mailboxObjectKey(mailbox, id);
   const record: MessageRecord = {
-    mailbox: caller.mailbox,
+    mailbox,
     id,
     folder: 'SENT',
-    folderKey: folderKey(caller.mailbox, 'SENT'),
+    folderKey: folderKey(mailbox, 'SENT'),
     from: formatRecipient(from),
     to: to.map(formatRecipient),
     cc: cc.map(formatRecipient),

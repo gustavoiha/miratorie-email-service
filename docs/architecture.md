@@ -67,7 +67,13 @@ SES signs with DKIM and uses `mail.<domain>` as MAIL FROM, so SPF and DKIM both 
 ## Access
 
 The HTTP API validates Cognito ID tokens. The Lambda also requires membership of the access group
-and serves only the mailbox in `custom:primary_email`, which the app client cannot write.
+and serves only the caller's mailboxes: their own (`custom:primary_email`, which the app client
+cannot write) and every collective address whose Cognito group `mailbox:<address>` they belong to.
+Groups come from the ID token, so membership changes apply at the next token refresh.
+
+Collective mail is stored once under its address, like any mailbox, so members share its folders and
+read state. Sending from a collective address uses the member's name with that address, and the copy
+goes to that mailbox's Sent folder.
 
 ## Stacks
 
@@ -79,11 +85,13 @@ and serves only the mailbox in `custom:primary_email`, which the app client cann
 
 ## API
 
-All routes require `Authorization: Bearer <Cognito ID token>`.
+All routes require `Authorization: Bearer <Cognito ID token>`. Message routes take `?mailbox=<address>`
+(default: the caller's first mailbox) and answer `403 mailbox_forbidden` for mailboxes the caller
+cannot use.
 
 | Route                   | Description                                                                                     |
 | ----------------------- | ----------------------------------------------------------------------------------------------- |
-| `GET /me`               | `{ mailbox, name, domain }`                                                                     |
+| `GET /me`               | `{ mailbox, mailboxes, name, domain }`; `mailboxes` lists own and collective addresses           |
 | `GET /messages`         | `?folder=INBOX\|SENT\|JUNK\|TRASH&limit=1..100&cursor=…` → `{ messages, cursor? }`, newest first |
 | `GET /messages/{id}`    | Message with plain-text body (parsed from S3 on each read)                                      |
 | `POST /messages`        | `{ to, cc?, bcc?, subject, text, inReplyTo? }`; ≤ 50 recipients; `inReplyTo` is a message id     |

@@ -10,6 +10,7 @@
   "activateReceiptRuleSet": true,
   "cognitoDomainPrefix": "example-com-mail",
   "accessGroupName": "email-users",
+  "collectiveAddresses": ["contact@example.com", "dmarc-reports@example.com"],
   "web": {
     "domainName": "webmail.example.com",
     "certificateArnParameter": "/example/certificate-arn"

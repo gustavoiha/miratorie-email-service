@@ -34,6 +34,24 @@ aws cognito-idp admin-delete-user --user-pool-id "$USER_POOL_ID" --username $U
 aws cognito-idp list-users-in-group --user-pool-id "$USER_POOL_ID" --group-name email-users
 ```
 
+## Collective addresses
+
+List shared addresses in `collectiveAddresses` in `infra/config.json` and deploy; each gets a group
+`mailbox:<address>`. Members can read and send from the address and share its folders and read
+state. A user may have only collective addresses (no `custom:primary_email`).
+
+```bash
+# Add or remove a member
+aws cognito-idp admin-add-user-to-group --user-pool-id "$USER_POOL_ID" --username $U --group-name mailbox:contact@example.com
+aws cognito-idp admin-remove-user-from-group --user-pool-id "$USER_POOL_ID" --username $U --group-name mailbox:contact@example.com
+
+# List members
+aws cognito-idp list-users-in-group --user-pool-id "$USER_POOL_ID" --group-name mailbox:contact@example.com
+```
+
+Mail sent to the address before the group existed is already stored and becomes visible to members.
+Removing an address from the config deletes its group, not its mail.
+
 Notes:
 
 - Deleting a user keeps their mail in S3 and DynamoDB.

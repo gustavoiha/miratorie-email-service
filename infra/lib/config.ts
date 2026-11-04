@@ -28,6 +28,11 @@ export interface EmailServiceConfig {
   cognitoDomainPrefix: string;
   /** Cognito group whose members may use the email service. */
   accessGroupName: string;
+  /**
+   * Shared addresses on the domain, e.g. "contact@example.com". Each gets a Cognito group
+   * `mailbox:<address>`; its members can read and send from the address.
+   */
+  collectiveAddresses: string[];
   /** Custom domain of the web client. Without it the client is served on its *.cloudfront.net domain. */
   web?: {
     /** e.g. "webmail.example.com". */
@@ -56,6 +61,7 @@ const DEFAULTS = {
   dmarc: { policy: 'quarantine' as DmarcPolicy },
   activateReceiptRuleSet: true,
   accessGroupName: 'email-users',
+  collectiveAddresses: [] as string[],
   localDevOrigins: ['http://localhost:5173'],
   rawInboundRetentionDays: 30,
 };
@@ -117,6 +123,17 @@ export function parseConfig(raw: unknown): EmailServiceConfig {
     errors.push('"webAclArn" must be the ARN of a CloudFront (global, us-east-1) WAF web ACL.');
   }
 
+  const rawCollective: unknown[] = Array.isArray(input.collectiveAddresses) ? input.collectiveAddresses : DEFAULTS.collectiveAddresses;
+  const collectiveAddresses = [...new Set(rawCollective.map((address) => String(address).trim().toLowerCase()))];
+  for (const address of collectiveAddresses) {
+    const [local, host] = address.split('@');
+    if (!local || host !== domainName || !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(local)) {
+      errors.push(`"collectiveAddresses" entry "${address}" must be an address on ${domainName}.`);
+    } else if (`mailbox:${address}`.length > 128) {
+      errors.push(`"collectiveAddresses" entry "${address}" is too long for a Cognito group name.`);
+    }
+  }
+
   if (errors.length > 0) {
     throw new Error(`Invalid email service config:\n  - ${errors.join('\n  - ')}`);
   }
@@ -134,6 +151,7 @@ export function parseConfig(raw: unknown): EmailServiceConfig {
     activateReceiptRuleSet: input.activateReceiptRuleSet ?? DEFAULTS.activateReceiptRuleSet,
     cognitoDomainPrefix,
     accessGroupName: String(input.accessGroupName ?? DEFAULTS.accessGroupName),
+    collectiveAddresses,
     web,
     api,
     webAclArn,

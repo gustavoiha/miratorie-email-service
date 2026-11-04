@@ -42,7 +42,10 @@ export interface MessagePage {
 }
 
 export interface Me {
+  /** The default mailbox: the user's own address, else their first collective one. */
   mailbox: string;
+  /** Every mailbox the user can read and send from, including collective addresses. */
+  mailboxes: string[];
   name: string;
   domain: string;
 }
@@ -66,6 +69,10 @@ export class ApiError extends Error {
   }
 }
 
+function messagePath(mailbox: string, id: string): string {
+  return `/messages/${encodeURIComponent(id)}?${new URLSearchParams({ mailbox })}`;
+}
+
 export class MailApi {
   constructor(
     private readonly config: AppConfig,
@@ -76,26 +83,27 @@ export class MailApi {
     return this.request('GET', '/me');
   }
 
-  list(folder: Folder, cursor?: string): Promise<MessagePage> {
-    const params = new URLSearchParams({ folder, limit: '25' });
+  list(mailbox: string, folder: Folder, cursor?: string): Promise<MessagePage> {
+    const params = new URLSearchParams({ mailbox, folder, limit: '25' });
     if (cursor) params.set('cursor', cursor);
     return this.request('GET', `/messages?${params}`);
   }
 
-  get(id: string): Promise<Message> {
-    return this.request('GET', `/messages/${encodeURIComponent(id)}`);
+  get(mailbox: string, id: string): Promise<Message> {
+    return this.request('GET', messagePath(mailbox, id));
   }
 
-  update(id: string, changes: { read?: boolean; folder?: Folder }): Promise<MessageSummary> {
-    return this.request('PATCH', `/messages/${encodeURIComponent(id)}`, changes);
+  update(mailbox: string, id: string, changes: { read?: boolean; folder?: Folder }): Promise<MessageSummary> {
+    return this.request('PATCH', messagePath(mailbox, id), changes);
   }
 
-  remove(id: string): Promise<void> {
-    return this.request('DELETE', `/messages/${encodeURIComponent(id)}`);
+  remove(mailbox: string, id: string): Promise<void> {
+    return this.request('DELETE', messagePath(mailbox, id));
   }
 
-  send(message: OutgoingMessage): Promise<MessageSummary> {
-    return this.request('POST', '/messages', message);
+  /** Sends from `mailbox`, which must be one of `Me.mailboxes`. */
+  send(mailbox: string, message: OutgoingMessage): Promise<MessageSummary> {
+    return this.request('POST', `/messages?${new URLSearchParams({ mailbox })}`, message);
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

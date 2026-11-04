@@ -6,6 +6,8 @@ import type { Draft } from './Compose';
 interface Props {
   api: MailApi;
   me: Me;
+  /** The mailbox the message belongs to; replies are sent from it. */
+  mailbox: string;
   id: string;
   onClose: () => void;
   /** Called after the message was moved or deleted. */
@@ -15,7 +17,7 @@ interface Props {
   onCompose: (draft: Draft) => void;
 }
 
-export function MessageView({ api, me, id, onClose, onChanged, onRead, onCompose }: Props) {
+export function MessageView({ api, me, mailbox, id, onClose, onChanged, onRead, onCompose }: Props) {
   const [message, setMessage] = useState<Message | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -23,12 +25,12 @@ export function MessageView({ api, me, id, onClose, onChanged, onRead, onCompose
   useEffect(() => {
     let cancelled = false;
     api
-      .get(id)
+      .get(mailbox, id)
       .then(async (loaded) => {
         if (cancelled) return;
         setMessage(loaded);
         if (!loaded.read) {
-          await api.update(id, { read: true });
+          await api.update(mailbox, id, { read: true });
           onRead();
         }
       })
@@ -36,7 +38,7 @@ export function MessageView({ api, me, id, onClose, onChanged, onRead, onCompose
     return () => {
       cancelled = true;
     };
-  }, [api, id]);
+  }, [api, mailbox, id]);
 
   if (error) return <p className="error">{error}</p>;
   if (!message) return <p className="muted">Loading…</p>;
@@ -51,16 +53,16 @@ export function MessageView({ api, me, id, onClose, onChanged, onRead, onCompose
       setBusy(false);
     }
   };
-  const move = (folder: Folder, notice: string) => act(() => api.update(id, { folder }), notice);
+  const move = (folder: Folder, notice: string) => act(() => api.update(mailbox, id, { folder }), notice);
 
   return (
     <article className="message">
       <div className="toolbar">
         <button onClick={onClose}>← Back</button>
-        <button onClick={() => onCompose(replyDraft(message, me, false))}>Reply</button>
-        <button onClick={() => onCompose(replyDraft(message, me, true))}>Reply all</button>
-        <button onClick={() => onCompose(forwardDraft(message))}>Forward</button>
-        <button disabled={busy} onClick={() => act(() => api.update(id, { read: false }), 'Marked as unread.')}>
+        <button onClick={() => onCompose(replyDraft(message, me, mailbox, false))}>Reply</button>
+        <button onClick={() => onCompose(replyDraft(message, me, mailbox, true))}>Reply all</button>
+        <button onClick={() => onCompose(forwardDraft(message, mailbox))}>Forward</button>
+        <button disabled={busy} onClick={() => act(() => api.update(mailbox, id, { read: false }), 'Marked as unread.')}>
           Mark unread
         </button>
         {message.folder === 'JUNK' && (
@@ -81,7 +83,7 @@ export function MessageView({ api, me, id, onClose, onChanged, onRead, onCompose
             <button
               className="danger"
               disabled={busy}
-              onClick={() => window.confirm('Delete this message forever?') && act(() => api.remove(id), 'Message deleted.')}
+              onClick={() => window.confirm('Delete this message forever?') && act(() => api.remove(mailbox, id), 'Message deleted.')}
             >
               Delete forever
             </button>
@@ -149,19 +151,21 @@ function quote(message: Message): string {
   return `\n\nOn ${formatDate(message.date)}, ${message.from} wrote:\n${quoted}`;
 }
 
-function replyDraft(message: Message, me: Me, all: boolean): Draft {
-  const self = me.mailbox.toLowerCase();
-  const sentByMe = addressOf(message.from) === self;
+function replyDraft(message: Message, me: Me, mailbox: string, all: boolean): Draft {
+  // None of the user's own mailboxes (own or collective) should be copied on a reply.
+  const own = new Set(me.mailboxes.map((address) => address.toLowerCase()));
+  const sentByMe = addressOf(message.from) === mailbox.toLowerCase();
   const primary = sentByMe ? message.to : message.replyTo.length > 0 ? message.replyTo : [message.from];
   const others = all ? [...message.to, ...message.cc] : [];
   const seen = new Set(primary.map(addressOf));
   const cc = others.filter((entry) => {
     const address = addressOf(entry);
-    if (address === self || seen.has(address)) return false;
+    if (own.has(address) || seen.has(address)) return false;
     seen.add(address);
     return true;
   });
   return {
+    from: mailbox,
     to: primary.join(', '),
     cc: cc.join(', '),
     bcc: '',
@@ -171,7 +175,7 @@ function replyDraft(message: Message, me: Me, all: boolean): Draft {
   };
 }
 
-function forwardDraft(message: Message): Draft {
+function forwardDraft(message: Message, mailbox: string): Draft {
   const header = [
     '---------- Forwarded message ----------',
     `From: ${message.from}`,
@@ -181,6 +185,7 @@ function forwardDraft(message: Message): Draft {
     ...(message.cc.length > 0 ? [`Cc: ${message.cc.join(', ')}`] : []),
   ].join('\n');
   return {
+    from: mailbox,
     to: '',
     cc: '',
     bcc: '',

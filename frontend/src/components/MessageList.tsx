@@ -4,13 +4,14 @@ import { displayName, formatDate } from '../format';
 
 interface Props {
   api: MailApi;
+  mailbox: string;
   folder: Folder;
   selectedId: string | null;
   refreshKey: number;
   onOpen: (id: string) => void;
 }
 
-export function MessageList({ api, folder, selectedId, refreshKey, onOpen }: Props) {
+export function MessageList({ api, mailbox, folder, selectedId, refreshKey, onOpen }: Props) {
   const [messages, setMessages] = useState<MessageSummary[]>([]);
   const [cursor, setCursor] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
@@ -22,7 +23,7 @@ export function MessageList({ api, folder, selectedId, refreshKey, onOpen }: Pro
     setLoading(true);
     setError(null);
     api
-      .list(folder)
+      .list(mailbox, folder)
       .then((page) => {
         if (cancelled) return;
         setMessages(page.messages);
@@ -33,13 +34,13 @@ export function MessageList({ api, folder, selectedId, refreshKey, onOpen }: Pro
     return () => {
       cancelled = true;
     };
-  }, [api, folder, refreshKey, reloadKey]);
+  }, [api, mailbox, folder, refreshKey, reloadKey]);
 
   const loadMore = async () => {
     if (!cursor) return;
     setLoading(true);
     try {
-      const page = await api.list(folder, cursor);
+      const page = await api.list(mailbox, folder, cursor);
       setMessages((current) => [...current, ...page.messages]);
       setCursor(page.cursor);
     } catch (err) {

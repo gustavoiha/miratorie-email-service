@@ -22,6 +22,7 @@ const baseConfig = {
   domainName: 'Example.com',
   cognitoDomainPrefix: 'example-com-mail',
   dmarc: { policy: 'reject', reportEmail: 'dmarc@example.com' },
+  collectiveAddresses: ['Contact@example.com', 'dmarc@example.com', 'contact@example.com'],
 };
 
 describe('parseConfig', () => {
@@ -42,6 +43,8 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ ...baseConfig, ...customWeb, api: { ...customWeb.api, domainName: 'webmail.example.com' } })).toThrow(
       /api.domainName/,
     );
+    expect(() => parseConfig({ ...baseConfig, collectiveAddresses: ['contact@other.com'] })).toThrow(/collectiveAddresses/);
+    expect(() => parseConfig({ ...baseConfig, collectiveAddresses: ['contact'] })).toThrow(/collectiveAddresses/);
     expect(() => parseConfig({ ...baseConfig, webAclArn: 'arn:aws:wafv2:eu-west-1:123456789012:regional/webacl/x/y' })).toThrow(/webAclArn/);
   });
 });
@@ -164,6 +167,11 @@ describe('stacks', () => {
       Schema: Match.arrayWith([Match.objectLike({ Name: 'primary_email', AttributeDataType: 'String', Mutable: true })]),
     });
     auth.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'email-users' });
+  });
+
+  it('creates a mailbox group per collective address', () => {
+    const groups = Object.values(auth.findResources('AWS::Cognito::UserPoolGroup')).map((group) => group.Properties.GroupName);
+    expect(groups.sort()).toEqual(['email-users', 'mailbox:contact@example.com', 'mailbox:dmarc@example.com']);
   });
 
   it('does not let users change their own mailbox address', () => {

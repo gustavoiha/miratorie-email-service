@@ -2,6 +2,8 @@ import { type FormEvent, useState } from 'react';
 import type { MailApi, Me } from '../api';
 
 export interface Draft {
+  /** Mailbox to send from: one of `Me.mailboxes`. */
+  from: string;
   to: string;
   cc: string;
   bcc: string;
@@ -40,7 +42,7 @@ export function Compose({ api, me, initial, onCancel, onSent }: Props) {
     setSending(true);
     setError(null);
     try {
-      await api.send({
+      await api.send(draft.from, {
         to: splitAddresses(draft.to),
         cc: splitAddresses(draft.cc),
         bcc: splitAddresses(draft.bcc),
@@ -60,7 +62,14 @@ export function Compose({ api, me, initial, onCancel, onSent }: Props) {
       <h2>{draft.inReplyTo ? 'Reply' : 'New message'}</h2>
       <label>
         From
-        <input value={me.name ? `${me.name} <${me.mailbox}>` : me.mailbox} disabled />
+        {/* A reply stays in the mailbox of the message it answers. */}
+        <select value={draft.from} onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))} disabled={me.mailboxes.length < 2 || Boolean(draft.inReplyTo)}>
+          {me.mailboxes.map((address) => (
+            <option key={address} value={address}>
+              {me.name ? `${me.name} <${address}>` : address}
+            </option>
+          ))}
+        </select>
       </label>
       <label>
         To

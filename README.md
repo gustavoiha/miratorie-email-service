@@ -46,6 +46,7 @@ cp infra/config.example.json infra/config.json
 | `dmarc.reportEmail`           | no         | DMARC aggregate report address (`rua`)                                              |
 | `activateReceiptRuleSet`      | no         | Activate this receipt rule set. Default `true`                                      |
 | `accessGroupName`             | no         | Cognito group allowed to use the service. Default `email-users`                     |
+| `collectiveAddresses`         | no         | Shared addresses, e.g. `contact@example.com`; each gets a group `mailbox:<address>` |
 | `web.domainName`              | no         | Custom web client domain; omit `web` to use `*.cloudfront.net`                      |
 | `web.certificateArnParameter` | with `web` | SSM parameter (deployment region) holding the `us-east-1` certificate ARN           |
 | `api.domainName`              | no         | Custom API domain; disables the `execute-api` URL                                   |
@@ -126,7 +127,15 @@ aws cognito-idp admin-add-user-to-group --user-pool-id "$USER_POOL_ID" \
   --username alice@example.com --group-name email-users
 ```
 
-The user signs in at `WebUrl` and sets a password. Other user tasks: [docs/users.md](docs/users.md).
+The user signs in at `WebUrl` and sets a password. To give them a collective address listed in
+`collectiveAddresses` (members share its mail, folders and read state, and can send from it):
+
+```bash
+aws cognito-idp admin-add-user-to-group --user-pool-id "$USER_POOL_ID" \
+  --username alice@example.com --group-name mailbox:contact@example.com
+```
+
+Other user tasks: [docs/users.md](docs/users.md).
 
 ## Development
 
